@@ -24,7 +24,6 @@ typedef struct{
 	const char* file;
 	int flags;
 	SceUID fd;
-	uint8_t* data;
 	SceSize size;
 	uint8_t type;
 	SceOff pos;
@@ -38,9 +37,6 @@ static int kuio_thread(SceSize args, void *argp)
 	
 	for (;;){
 		
-		int i = 0;
-		int bufsize = 0;
-		
 		// Waiting for IO request
 		ksceKernelWaitSema(io_request_mutex, 1, NULL);
 		
@@ -50,26 +46,10 @@ static int kuio_thread(SceSize args, void *argp)
 				io_request.fd = ksceIoOpen(io_request.file, io_request.flags, 6);
 				break;
 			case WRITE_FILE:
-				i = 0;
-				bufsize = 0;
-				while (i < io_request.size){
-					if (io_request.size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
-					else bufsize = io_request.size - i;
-					ksceKernelMemcpyUserToKernel(chunk, (uintptr_t)&io_request.data[i], bufsize);	
-					ksceIoWrite(io_request.fd, chunk, bufsize);
-					i += bufsize;
-				}
+				ksceIoWrite(io_request.fd, chunk, io_request.size);
 				break;
 			case READ_FILE:
-				i = 0;
-				bufsize = 0;
-				while (i < io_request.size){
-					if (io_request.size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
-					else bufsize = io_request.size - i;
-					ksceIoRead(io_request.fd, chunk, bufsize);
-					ksceKernelMemcpyKernelToUser((uintptr_t)&io_request.data[i], chunk, bufsize);
-					i += bufsize;
-				}
+				ksceIoRead(io_request.fd, chunk, io_request.size);
 				break;
 			case SEEK_FILE:
 				io_request.pos = ksceIoLseek(io_request.fd, io_request.offs, io_request.flags);
@@ -128,16 +108,25 @@ int kuIoOpen(const char *file, int flags, SceUID* res){
 int kuIoWrite(SceUID fd, const void *data, SceSize size){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-		
-	// Performing request to kernel thread
+	
+	int i = 0;
+	int bufsize = 0;
 	io_request.type = WRITE_FILE;
 	io_request.fd = fd;
-	io_request.data = data;
-	io_request.size = size;
-	ksceKernelSignalSema(io_request_mutex, 1);
+	while (i < size){
+		if (size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
+		else bufsize = size - i;
+		ksceKernelMemcpyUserToKernel(chunk, (uintptr_t)(data + i), bufsize);
+		i += bufsize;
 		
-	// Waiting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
+		// Performing request to kernel thread
+		io_request.size = bufsize;
+		ksceKernelSignalSema(io_request_mutex, 1);
+		
+		// Waiting results
+		ksceKernelWaitSema(io_result_mutex, 1, NULL);
+		
+	}
 	
 	EXIT_SYSCALL(state);
 	return 0;
@@ -146,16 +135,25 @@ int kuIoWrite(SceUID fd, const void *data, SceSize size){
 int kuIoRead(SceUID fd, void *data, SceSize size){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-		
-	// Performing request to kernel thread
+	
+	int i = 0;
+	int bufsize = 0;
 	io_request.type = READ_FILE;
 	io_request.fd = fd;
-	io_request.data = data;
-	io_request.size = size;
-	ksceKernelSignalSema(io_request_mutex, 1);
+	while (i < size){
+		if (size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
+		else bufsize = size - i;
 		
-	// Waiting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
+		// Performing request to kernel thread
+		io_request.size = bufsize;
+		ksceKernelSignalSema(io_request_mutex, 1);
+		
+		// Getting results
+		ksceKernelWaitSema(io_result_mutex, 1, NULL);
+		ksceKernelMemcpyKernelToUser((uintptr_t)(data + i), chunk, bufsize);
+		i += bufsize;
+		
+	}
 	
 	EXIT_SYSCALL(state);
 	return 0;
