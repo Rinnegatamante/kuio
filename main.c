@@ -17,8 +17,9 @@ static char fname[256];
 #define CLOSE_FILE  3
 #define SEEK_FILE   4
 #define REMOVE_FILE 5
-#define CREATE_DIR  6
-#define REMOVE_DIR  7
+#define TELL_FILE   6
+#define CREATE_DIR  7
+#define REMOVE_DIR  8
 
 typedef struct{
 	const char* file;
@@ -52,7 +53,7 @@ static int kuio_thread(SceSize args, void *argp)
 				ksceIoRead(io_request.fd, chunk, io_request.size);
 				break;
 			case SEEK_FILE:
-				io_request.pos = ksceIoLseek(io_request.fd, io_request.offs, io_request.flags);
+				ksceIoLseek(io_request.fd, io_request.offs, io_request.flags);
 				break;
 			case CLOSE_FILE:
 				ksceIoClose(io_request.fd);
@@ -60,6 +61,8 @@ static int kuio_thread(SceSize args, void *argp)
 			case REMOVE_FILE:
 				ksceIoRemove(io_request.file);
 				break;
+			case TELL_FILE:
+				io_request.pos = ksceIoLseek(io_request.fd, 0, SEEK_CUR);
 			case CREATE_DIR:
 				ksceIoMkdir(io_request.file, 6);
 				break;
@@ -175,15 +178,31 @@ int kuIoClose(SceUID fd){
 	return 0;
 }
 
-int kuIoLseek(SceUID fd, int offset, int whence, SceOff* pos){
+int kuIoLseek(SceUID fd, int offset, int whence){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-	SceOff kpos;
 	
 	// Performing request to kernel thread
 	io_request.type = SEEK_FILE;
 	io_request.offs = offset;
 	io_request.flags = whence;
+	ksceKernelSignalSema(io_request_mutex, 1);
+		
+	// Waiting results
+	ksceKernelWaitSema(io_result_mutex, 1, NULL);
+	
+	EXIT_SYSCALL(state);
+	return 0;
+}
+
+int kuIoTell(SceUID fd, SceOff* pos){
+	uint32_t state;
+	ENTER_SYSCALL(state);
+	SceOff kpos;
+	
+	// Performing request to kernel thread
+	io_request.type = TELL_FILE;
+	io_request.fd = fd;
 	ksceKernelSignalSema(io_request_mutex, 1);
 		
 	// Getting results

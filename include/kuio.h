@@ -75,11 +75,10 @@ int kuIoWrite(SceUID fd, const void *data, SceSize size);
  * @param fd - Opened file descriptor with which to seek
  * @param offset - Relative offset from the start position given by whence
  * @param whence - Set to SEEK_SET to seek from the start of the file, SEEK_CUR
- * @param pos - The position in the file after the seek
  * seek from the current position and SEEK_END to seek from the end.
  *
  */
-int kuIoLseek(SceUID fd, int offset, int whence, SceOff* pos);
+int kuIoLseek(SceUID fd, int offset, int whence);
 
 /**
  * Remove directory entry
@@ -103,5 +102,14 @@ int kuIoMkdir(const char *dir);
  * @param path - Removes a directory file pointed by the string path
  */
 int kuIoRmdir(const char *path);
+
+/**
+ * Return the position in the file
+ *
+ * @param fd - Opened file descriptor with which to seek
+ * @param pos - The position in the file after the seek
+ *
+ */
+int kuIoTell(SceUID fd, SceOff* pos);
 
 #endif

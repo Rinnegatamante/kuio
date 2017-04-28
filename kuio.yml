@@ -18,3 +18,4 @@ kuio:
                 - kuIoMkdir
                 - kuIoRmdir
                 - kuIoRemove
+                - kuIoTell
