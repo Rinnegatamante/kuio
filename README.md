@@ -10,7 +10,8 @@ It currently gives abstractions for these functions:
 *sceIoLseek* -> *kuIoLseek*<br>
 *sceIoRemove* -> *kuIoRemove*<br>
 *sceIoMkdir* -> *kuIoMkdir*<br>
-*sceIoRmdir* -> *kuIoRmdir*<br><br>
+*sceIoRmdir* -> *kuIoRmdir*<br>
+*ftell* -> *kuIoTell* (kuIoLseek doesn't return position)<br><br>
 
 # Credits
 
