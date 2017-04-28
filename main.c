@@ -63,6 +63,7 @@ static int kuio_thread(SceSize args, void *argp)
 				break;
 			case TELL_FILE:
 				io_request.pos = ksceIoLseek(io_request.fd, 0, SEEK_CUR);
+				break;
 			case CREATE_DIR:
 				ksceIoMkdir(io_request.file, 6);
 				break;
