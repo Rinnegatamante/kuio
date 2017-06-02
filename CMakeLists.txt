@@ -23,9 +23,7 @@ link_directories(
 
 add_definitions(-DRELEASE)
 
-add_executable(kuio
-  main.c
-)
+add_executable(kuio main.c)
 
 target_link_libraries(kuio
   taihenForKernel_stub
@@ -45,3 +43,7 @@ set_target_properties(kuio
 vita_create_self(kuio.skprx kuio CONFIG ${CMAKE_SOURCE_DIR}/kuio.yml)
 
 vita_create_stubs(stubs kuio ${CMAKE_SOURCE_DIR}/kuio.yml KERNEL)
+
+install(FILES ${CMAKE_BINARY_DIR}/stubs/libkuio_stub.a DESTINATION lib)
+install(FILES ${CMAKE_BINARY_DIR}/stubs/libkuio_stub_weak.a DESTINATION lib)
+install(FILES ${CMAKE_SOURCE_DIR}/include/kuio.h DESTINATION include)
