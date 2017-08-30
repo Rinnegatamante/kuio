@@ -40,7 +40,12 @@ set_target_properties(kuio
   COMPILE_FLAGS "-D__VITA_KERNEL__"
 )
 
-vita_create_self(kuio.skprx kuio CONFIG ${CMAKE_SOURCE_DIR}/kuio.yml)
+add_custom_target(kuio.skprx ALL
+  COMMAND vita-elf-create -e ${CMAKE_SOURCE_DIR}/kuio.yml kuio kuio.velf ${CMAKE_SOURCE_DIR}/taihen.json
+  COMMAND vita-make-fself -c kuio.velf kuio.skprx
+)
+
+add_dependencies(kuio.skprx kuio)
 
 vita_create_stubs(stubs kuio ${CMAKE_SOURCE_DIR}/kuio.yml KERNEL)
 
