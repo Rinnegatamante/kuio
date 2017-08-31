@@ -20,6 +20,7 @@ static char fname[256];
 #define TELL_FILE   6
 #define CREATE_DIR  7
 #define REMOVE_DIR  8
+#define SEEK32_FILE 9
 
 typedef struct{
 	const char* file;
@@ -70,6 +71,9 @@ static int kuio_thread(SceSize args, void *argp)
 			case REMOVE_DIR:
 				ksceIoRmdir(io_request.file);
 				break;
+			case SEEK32_FILE:
+				ksceIoLseek32(io_request.fd, io_request.offs, io_request.flags);
+				break;
 			default:
 				break;
 		}
@@ -90,8 +94,10 @@ int kuIoOpen(const char *file, int flags, SceUID* res){
 	SceUID kres = 0;
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
+	#ifdef SAFE_MODE
 	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-		
+	#endif
+	
 		// Performing request to kernel thread
 		io_request.type = OPEN_FILE;
 		io_request.file = fname;
@@ -102,7 +108,9 @@ int kuIoOpen(const char *file, int flags, SceUID* res){
 		ksceKernelWaitSema(io_result_mutex, 1, NULL);
 		kres = io_request.fd;
 		
+	#ifdef SAFE_MODE	
 	}
+	#endif
 	
 	ksceKernelMemcpyKernelToUser((uintptr_t)res, &kres, sizeof(SceUID));
 	EXIT_SYSCALL(state);
@@ -196,6 +204,23 @@ int kuIoLseek(SceUID fd, int offset, int whence){
 	return 0;
 }
 
+int kuIoLseek32(SceUID fd, int offset, int whence){
+	uint32_t state;
+	ENTER_SYSCALL(state);
+	
+	// Performing request to kernel thread
+	io_request.type = SEEK32_FILE;
+	io_request.offs = offset;
+	io_request.flags = whence;
+	ksceKernelSignalSema(io_request_mutex, 1);
+		
+	// Waiting results
+	ksceKernelWaitSema(io_result_mutex, 1, NULL);
+	
+	EXIT_SYSCALL(state);
+	return 0;
+}
+
 int kuIoTell(SceUID fd, SceOff* pos){
 	uint32_t state;
 	ENTER_SYSCALL(state);
@@ -221,8 +246,10 @@ int kuIoMkdir(const char* dir){
 	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)dir, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
+	#ifdef SAFE_MODE
 	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-		
+	#endif
+	
 		// Performing request to kernel thread
 		io_request.type = CREATE_DIR;
 		io_request.file = fname;
@@ -230,8 +257,10 @@ int kuIoMkdir(const char* dir){
 		
 		// Waiting results
 		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		
+	
+	#ifdef SAFE_MODE	
 	}
+	#endif
 	
 	EXIT_SYSCALL(state);
 	return 0;
@@ -243,8 +272,10 @@ int kuIoRemove(const char* file){
 	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)file, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
+	#ifdef SAFE_MODE
 	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-		
+	#endif
+	
 		// Performing request to kernel thread
 		io_request.type = REMOVE_FILE;
 		io_request.file = fname;
@@ -252,8 +283,10 @@ int kuIoRemove(const char* file){
 		
 		// Waiting results
 		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		
+	
+	#ifdef SAFE_MODE
 	}
+	#endif
 		
 	EXIT_SYSCALL(state);
 	return 0;
@@ -265,8 +298,10 @@ int kuIoRmdir(const char* dir){
 	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)dir, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
+	#ifdef SAFE_MODE
 	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-		
+	#endif
+	
 		// Performing request to kernel thread
 		io_request.type = REMOVE_DIR;
 		io_request.file = fname;
@@ -274,8 +309,10 @@ int kuIoRmdir(const char* dir){
 		
 		// Waiting results
 		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		
+	
+	#ifdef SAFE_MODE
 	}
+	#endif
 		
 	EXIT_SYSCALL(state);
 	return 0;

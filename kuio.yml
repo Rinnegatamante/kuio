@@ -19,3 +19,4 @@ kuio:
                 - kuIoRmdir
                 - kuIoRemove
                 - kuIoTell
+                - kuIoLseek32

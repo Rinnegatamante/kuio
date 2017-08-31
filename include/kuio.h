@@ -68,8 +68,7 @@ int kuIoWrite(SceUID fd, const void *data, SceSize size);
  *
  * @par Example:
  * @code
- * SceOff pos
- * kuIoLseek(fd, -10, SEEK_END, &pos);
+ * kuIoLseek(fd, -10, SEEK_END);
  * @endcode
  *
  * @param fd - Opened file descriptor with which to seek
@@ -79,6 +78,22 @@ int kuIoWrite(SceUID fd, const void *data, SceSize size);
  *
  */
 int kuIoLseek(SceUID fd, int offset, int whence);
+
+/**
+ * Reposition read/write file descriptor offset (32 bit mode)
+ *
+ * @par Example:
+ * @code
+ * kuIoLseek32(fd, -10, SEEK_END);
+ * @endcode
+ *
+ * @param fd - Opened file descriptor with which to seek
+ * @param offset - Relative offset from the start position given by whence
+ * @param whence - Set to SEEK_SET to seek from the start of the file, SEEK_CUR
+ * seek from the current position and SEEK_END to seek from the end.
+ *
+ */
+int kuIoLseek32(SceUID fd, int offset, int whence);
 
 /**
  * Remove directory entry
