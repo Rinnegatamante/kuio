@@ -20,7 +20,6 @@ static char fname[256];
 #define TELL_FILE   6
 #define CREATE_DIR  7
 #define REMOVE_DIR  8
-#define SEEK32_FILE 9
 
 typedef struct{
 	const char* file;
@@ -70,9 +69,6 @@ static int kuio_thread(SceSize args, void *argp)
 				break;
 			case REMOVE_DIR:
 				ksceIoRmdir(io_request.file);
-				break;
-			case SEEK32_FILE:
-				ksceIoLseek32(io_request.fd, io_request.offs, io_request.flags);
 				break;
 			default:
 				break;
@@ -193,23 +189,6 @@ int kuIoLseek(SceUID fd, int offset, int whence){
 	
 	// Performing request to kernel thread
 	io_request.type = SEEK_FILE;
-	io_request.offs = offset;
-	io_request.flags = whence;
-	ksceKernelSignalSema(io_request_mutex, 1);
-		
-	// Waiting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
-	EXIT_SYSCALL(state);
-	return 0;
-}
-
-int kuIoLseek32(SceUID fd, int offset, int whence){
-	uint32_t state;
-	ENTER_SYSCALL(state);
-	
-	// Performing request to kernel thread
-	io_request.type = SEEK32_FILE;
 	io_request.offs = offset;
 	io_request.flags = whence;
 	ksceKernelSignalSema(io_request_mutex, 1);
