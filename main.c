@@ -1,3 +1,4 @@
+#define _PSP2_KERNEL_SYSMEM_H_
 #include <vitasdkkern.h>
 #include <taihen.h>
 #include <libk/string.h>
