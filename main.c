@@ -1,5 +1,10 @@
 #define _PSP2_KERNEL_SYSMEM_H_
-#include <vitasdkkern.h>
+#include <psp2kern/io/fcntl.h>
+#include <psp2kern/kernel/threadmgr/semaphores.h>
+#include <psp2kern/kernel/cpu.h>
+#include <psp2kern/kernel/modulemgr.h>
+#include <psp2kern/kernel/sysmem/data_transfers.h>
+#include <psp2kern/kernel/threadmgr/thread.h>
 #include <taihen.h>
 #include <libk/string.h>
 #include <libk/stdio.h>
@@ -87,7 +92,7 @@ static int kuio_thread(SceSize args, void *argp)
 int kuIoOpen(const char *file, int flags, SceUID* res){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)file, 256);
+	ksceKernelStrncpyUserToKernel(fname, file, 256);
 	SceUID kres = 0;
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
@@ -109,7 +114,7 @@ int kuIoOpen(const char *file, int flags, SceUID* res){
 	}
 	#endif
 	
-	ksceKernelMemcpyKernelToUser((uintptr_t)res, &kres, sizeof(SceUID));
+	ksceKernelMemcpyKernelToUser(res, &kres, sizeof(SceUID));
 	EXIT_SYSCALL(state);
 	return 0;
 }
@@ -125,7 +130,7 @@ int kuIoWrite(SceUID fd, const void *data, SceSize size){
 	while (i < size){
 		if (size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
 		else bufsize = size - i;
-		ksceKernelMemcpyUserToKernel(chunk, (uintptr_t)(data + i), bufsize);
+		ksceKernelMemcpyUserToKernel(chunk, (data + i), bufsize);
 		i += bufsize;
 		
 		// Performing request to kernel thread
@@ -159,7 +164,7 @@ int kuIoRead(SceUID fd, void *data, SceSize size){
 		
 		// Getting results
 		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		ksceKernelMemcpyKernelToUser((uintptr_t)(data + i), chunk, bufsize);
+		ksceKernelMemcpyKernelToUser((data + i), chunk, bufsize);
 		i += bufsize;
 		
 	}
@@ -215,7 +220,7 @@ int kuIoTell(SceUID fd, SceOff* pos){
 	ksceKernelWaitSema(io_result_mutex, 1, NULL);
 	kpos = io_request.pos;
 	
-	ksceKernelMemcpyKernelToUser((uintptr_t)pos, &kpos, sizeof(SceUID));
+	ksceKernelMemcpyKernelToUser(pos, &kpos, sizeof(SceUID));
 	EXIT_SYSCALL(state);
 	return 0;
 }
@@ -223,7 +228,7 @@ int kuIoTell(SceUID fd, SceOff* pos){
 int kuIoMkdir(const char* dir){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)dir, 256);
+	ksceKernelStrncpyUserToKernel(fname, dir, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
 	#ifdef SAFE_MODE
@@ -249,7 +254,7 @@ int kuIoMkdir(const char* dir){
 int kuIoRemove(const char* file){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)file, 256);
+	ksceKernelStrncpyUserToKernel(fname, file, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
 	#ifdef SAFE_MODE
@@ -275,7 +280,7 @@ int kuIoRemove(const char* file){
 int kuIoRmdir(const char* dir){
 	uint32_t state;
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, (uintptr_t)dir, 256);
+	ksceKernelStrncpyUserToKernel(fname, dir, 256);
 	
 	// Checking if the request is trying to access ux0:/data for security reasons
 	#ifdef SAFE_MODE
