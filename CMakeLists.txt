@@ -31,8 +31,7 @@ target_link_libraries(kuio
   SceSysmemForDriver_stub
   SceThreadmgrForDriver_stub
   SceIofilemgrForDriver_stub
-  k
-  gcc
+  SceSysclibForDriver_stub
 )
 
 set_target_properties(kuio
