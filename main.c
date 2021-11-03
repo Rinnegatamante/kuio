@@ -6,9 +6,9 @@
 #include <psp2kern/kernel/sysmem/data_transfers.h>
 #include <psp2kern/kernel/threadmgr/thread.h>
 #include <taihen.h>
-#include <libk/string.h>
-#include <libk/stdio.h>
-#include <libk/stdarg.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include "include/kuio.h"
 
 #define CHUNK_SIZE 2048
