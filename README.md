@@ -1,6 +1,6 @@
 # Description
 
-kuio is a lightweight kernel module for taiHen that allows user modules to access ux0:data for basic I/O operations.<br>
+kuio is a lightweight kernel module for taiHen that allows user modules to access ux0:/data/ for basic I/O operations.<br>
 It currently gives abstractions for these functions:
 
 *sceIoOpen* -> *kuIoOpen*<br>

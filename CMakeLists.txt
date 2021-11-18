@@ -26,11 +26,11 @@ add_definitions(-DRELEASE)
 add_executable(kuio main.c)
 
 target_link_libraries(kuio
-  taihenForKernel_stub
-  SceLibKernel_stub
-  SceSysmemForDriver_stub
-  SceThreadmgrForDriver_stub
+  SceFios2KernelForDriver_stub
   SceIofilemgrForDriver_stub
+  SceThreadmgrForDriver_stub
+  SceSblACMgrForDriver_stub
+  SceSysmemForDriver_stub
   SceSysclibForDriver_stub
 )
 
@@ -40,7 +40,7 @@ set_target_properties(kuio
 )
 
 add_custom_target(kuio.skprx ALL
-  COMMAND vita-elf-create -e ${CMAKE_SOURCE_DIR}/kuio.yml kuio kuio.velf ${CMAKE_SOURCE_DIR}/taihen.json
+  COMMAND vita-elf-create -s -e ${CMAKE_SOURCE_DIR}/kuio.yml kuio kuio.velf ${CMAKE_SOURCE_DIR}/taihen.json
   COMMAND vita-make-fself -c kuio.velf kuio.skprx
 )
 
