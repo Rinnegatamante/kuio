@@ -1,322 +1,311 @@
-#define _PSP2_KERNEL_SYSMEM_H_
-#include <psp2kern/io/fcntl.h>
-#include <psp2kern/kernel/threadmgr/semaphores.h>
-#include <psp2kern/kernel/cpu.h>
+
 #include <psp2kern/kernel/modulemgr.h>
-#include <psp2kern/kernel/sysmem/data_transfers.h>
-#include <psp2kern/kernel/threadmgr/thread.h>
-#include <taihen.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdarg.h>
+#include <psp2kern/kernel/threadmgr.h>
+#include <psp2kern/kernel/sysmem.h>
+#include <psp2kern/kernel/sysclib.h>
+#include <psp2kern/kernel/cpu.h>
+#include <psp2kern/io/fcntl.h>
+#include <psp2kern/fios2.h>
+#include <psp2kern/sblacmgr.h>
 #include "include/kuio.h"
 
-#define CHUNK_SIZE 2048
+#define SAFE_MODE 1
 
-static uint8_t chunk[CHUNK_SIZE];
-static SceUID kuio_thd_id, io_request_mutex, io_result_mutex;
-static char fname[256];
+int kuioCpyPath(SceUID pid, char *dst, int max, const char *src){
 
-#define OPEN_FILE   0
-#define WRITE_FILE  1
-#define READ_FILE   2
-#define CLOSE_FILE  3
-#define SEEK_FILE   4
-#define REMOVE_FILE 5
-#define TELL_FILE   6
-#define CREATE_DIR  7
-#define REMOVE_DIR  8
+	int res = 0x80010016;
+	char path[0x400];
 
-typedef struct{
-	const char* file;
-	int flags;
-	SceUID fd;
-	SceSize size;
-	uint8_t type;
-	SceOff pos;
-	int offs;
-}kuIoRequest;
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
 
-volatile kuIoRequest io_request;
+	SceSSize str_res = ksceKernelStrncpyFromUser(path, src, sizeof(path));
 
-static int kuio_thread(SceSize args, void *argp)
-{
-	
-	for (;;){
-		
-		// Waiting for IO request
-		ksceKernelWaitSema(io_request_mutex, 1, NULL);
-		
-		// Executing the received request
-		switch(io_request.type){
-			case OPEN_FILE:
-				io_request.fd = ksceIoOpen(io_request.file, io_request.flags, 6);
-				break;
-			case WRITE_FILE:
-				ksceIoWrite(io_request.fd, chunk, io_request.size);
-				break;
-			case READ_FILE:
-				ksceIoRead(io_request.fd, chunk, io_request.size);
-				break;
-			case SEEK_FILE:
-				ksceIoLseek(io_request.fd, io_request.offs, io_request.flags);
-				break;
-			case CLOSE_FILE:
-				ksceIoClose(io_request.fd);
-				break;
-			case REMOVE_FILE:
-				ksceIoRemove(io_request.file);
-				break;
-			case TELL_FILE:
-				io_request.pos = ksceIoLseek(io_request.fd, 0, SEEK_CUR);
-				break;
-			case CREATE_DIR:
-				ksceIoMkdir(io_request.file, 6);
-				break;
-			case REMOVE_DIR:
-				ksceIoRmdir(io_request.file);
-				break;
-			default:
-				break;
+	if(str_res == 0 || str_res == sizeof(path) || strncmp(path, "sdstor", 6) == 0)
+		goto end;
+
+	res = ksceFiosKernelOverlayResolveSync(pid, 0, path, dst, max);
+	if(res < 0)
+		goto end;
+
+#ifdef SAFE_MODE	
+	if(strncmp(dst, "ux0:/data/", 10) != 0)
+		res = 0x80010016;
+#endif
+
+end:
+	return res;
+}
+
+int kuIoOpen(const char *file, int flags, SceUID *res){
+
+	uint32_t state;
+	int result;
+	SceUID pid, fd_guid, fd_puid = 0x80010016;
+	char path_resolved[0x400];
+
+	ENTER_SYSCALL(state);
+
+	pid = ksceKernelGetProcessId();
+
+	result = kuioCpyPath(pid, path_resolved, sizeof(path_resolved), file);
+	if(result >= 0){
+		int curr_al = ksceKernelSetPermission(0x40);
+		fd_guid = ksceIoOpen(path_resolved, flags, 6);
+		ksceKernelSetPermission(curr_al);
+
+		if(fd_guid >= 0){
+			fd_puid = kscePUIDOpenByGUID(pid, fd_guid);
+			result = 0;
+		}else{
+			fd_puid = fd_guid;
+			result = fd_guid;
 		}
-		
-		// Sending results
-		ksceKernelSignalSema(io_result_mutex, 1);
-		
 	}
-	
-	return 0;
-	
-}
 
-int kuIoOpen(const char *file, int flags, SceUID* res){
-	uint32_t state;
-	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, file, 256);
-	SceUID kres = 0;
-	
-	// Checking if the request is trying to access ux0:/data for security reasons
-	#ifdef SAFE_MODE
-	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-	#endif
-	
-		// Performing request to kernel thread
-		io_request.type = OPEN_FILE;
-		io_request.file = fname;
-		io_request.flags = flags;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Getting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		kres = io_request.fd;
-		
-	#ifdef SAFE_MODE	
-	}
-	#endif
-	
-	ksceKernelMemcpyKernelToUser(res, &kres, sizeof(SceUID));
+	ksceKernelMemcpyKernelToUser(res, &fd_puid, sizeof(*res));
 	EXIT_SYSCALL(state);
-	return 0;
-}
-
-int kuIoWrite(SceUID fd, const void *data, SceSize size){
-	uint32_t state;
-	ENTER_SYSCALL(state);
-	
-	int i = 0;
-	int bufsize = 0;
-	io_request.type = WRITE_FILE;
-	io_request.fd = fd;
-	while (i < size){
-		if (size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
-		else bufsize = size - i;
-		ksceKernelMemcpyUserToKernel(chunk, (data + i), bufsize);
-		i += bufsize;
-		
-		// Performing request to kernel thread
-		io_request.size = bufsize;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Waiting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		
-	}
-	
-	EXIT_SYSCALL(state);
-	return 0;
-}
-
-int kuIoRead(SceUID fd, void *data, SceSize size){
-	uint32_t state;
-	ENTER_SYSCALL(state);
-	
-	int i = 0;
-	int bufsize = 0;
-	io_request.type = READ_FILE;
-	io_request.fd = fd;
-	while (i < size){
-		if (size - i > CHUNK_SIZE) bufsize = CHUNK_SIZE;
-		else bufsize = size - i;
-		
-		// Performing request to kernel thread
-		io_request.size = bufsize;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Getting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-		ksceKernelMemcpyKernelToUser((data + i), chunk, bufsize);
-		i += bufsize;
-		
-	}
-	
-	EXIT_SYSCALL(state);
-	return 0;
+	return result;
 }
 
 int kuIoClose(SceUID fd){
+
+	int res = 0x80010016;
 	uint32_t state;
+	SceUID pid, fd_guid;
 	ENTER_SYSCALL(state);
-	
-	// Performing request to kernel thread
-	io_request.type = CLOSE_FILE;
-	io_request.fd = fd;
-	ksceKernelSignalSema(io_request_mutex, 1);
-	
-	// Waiting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
+
+	int curr_al = ksceKernelSetPermission(0x40);
+
+	pid = ksceKernelGetProcessId();
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
+
+	fd_guid = kscePUIDtoGUID(pid, fd);
+	if(fd_guid < 0){
+		res = fd_guid;
+		goto end;
+	}
+
+	res = ksceIoClose(fd_guid);
+	if(res >= 0){
+		res = kscePUIDClose(pid, fd);
+	}
+
+end:
+	ksceKernelSetPermission(curr_al);
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
+}
+
+int kuIoRead(SceUID fd, void *data, SceSize size){
+
+	uint32_t state;
+	int res = 0x80010016;
+	SceUID pid, fd_guid;
+	void *kernel_page = NULL;
+	SceSize kernel_size = 0;
+	SceUInt32 kernel_offset = 0;
+
+	ENTER_SYSCALL(state);
+
+	int curr_al = ksceKernelSetPermission(0x40);
+
+	pid = ksceKernelGetProcessId();
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
+
+	fd_guid = kscePUIDtoGUID(pid, fd);
+	if(fd_guid < 0){
+		res = fd_guid;
+		goto end;
+	}
+
+	int type = (ksceSblACMgrIsGameProgram(0) != 0) ? 0x11 : 1;
+
+	SceUID mapid = ksceKernelMapUserBlock("KuioUserRefer", SCE_KERNEL_MEMORY_REF_PERM_USER_W, type, data, size, &kernel_page, &kernel_size, &kernel_offset);
+	if(mapid < 0){
+		res = mapid;
+		goto end;
+	}
+
+	res = ksceIoRead(fd_guid, (void *)(((uintptr_t)kernel_page) + kernel_offset), size);
+
+	ksceKernelMemBlockRelease(mapid);
+
+end:
+	ksceKernelSetPermission(curr_al);
+	EXIT_SYSCALL(state);
+	return res;
+}
+
+int kuIoWrite(SceUID fd, const void *data, SceSize size){
+
+	uint32_t state;
+	int res = 0x80010016;
+	SceUID pid, fd_guid;
+	void *kernel_page = NULL;
+	SceSize kernel_size = 0;
+	SceUInt32 kernel_offset = 0;
+
+	ENTER_SYSCALL(state);
+
+	int curr_al = ksceKernelSetPermission(0x40);
+
+	pid = ksceKernelGetProcessId();
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
+
+	fd_guid = kscePUIDtoGUID(pid, fd);
+	if(fd_guid < 0){
+		res = fd_guid;
+		goto end;
+	}
+
+	int type = (ksceSblACMgrIsGameProgram(0) != 0) ? 0x11 : 1;
+
+	SceUID mapid = ksceKernelMapUserBlock("KuioUserRefer", SCE_KERNEL_MEMORY_REF_PERM_USER_R, type, data, size, &kernel_page, &kernel_size, &kernel_offset);
+	if(mapid < 0){
+		res = mapid;
+		goto end;
+	}
+
+	res = ksceIoWrite(fd_guid, (const void *)(((uintptr_t)kernel_page) + kernel_offset), size);
+
+	ksceKernelMemBlockRelease(mapid);
+
+end:
+	ksceKernelSetPermission(curr_al);
+	EXIT_SYSCALL(state);
+	return res;
 }
 
 int kuIoLseek(SceUID fd, int offset, int whence){
+
 	uint32_t state;
+	int res = 0x80010016;
+	SceUID pid, fd_guid;
+
 	ENTER_SYSCALL(state);
-	
-	// Performing request to kernel thread
-	io_request.type = SEEK_FILE;
-	io_request.offs = offset;
-	io_request.flags = whence;
-	ksceKernelSignalSema(io_request_mutex, 1);
-		
-	// Waiting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
+
+	int curr_al = ksceKernelSetPermission(0x40);
+
+	pid = ksceKernelGetProcessId();
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
+
+	fd_guid = kscePUIDtoGUID(pid, fd);
+	if(fd_guid < 0){
+		res = fd_guid;
+		goto end;
+	}
+
+	SceOff seek_res = ksceIoLseek(fd_guid, (int)offset, whence);
+	if(seek_res < 0LL)
+		res = (int)seek_res;
+	else
+		res = 0;
+
+end:
+	ksceKernelSetPermission(curr_al);
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
 }
 
-int kuIoTell(SceUID fd, SceOff* pos){
+int kuIoTell(SceUID fd, SceOff *pos){
+
 	uint32_t state;
+	int res = 0x80010016;
+	SceUID pid, fd_guid;
+
 	ENTER_SYSCALL(state);
-	SceOff kpos;
-	
-	// Performing request to kernel thread
-	io_request.type = TELL_FILE;
-	io_request.fd = fd;
-	ksceKernelSignalSema(io_request_mutex, 1);
-		
-	// Getting results
-	ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	kpos = io_request.pos;
-	
-	ksceKernelMemcpyKernelToUser(pos, &kpos, sizeof(SceUID));
+
+	int curr_al = ksceKernelSetPermission(0x40);
+
+	pid = ksceKernelGetProcessId();
+	if(pid == SCE_GUID_KERNEL_PROCESS_ID)
+		goto end;
+
+	fd_guid = kscePUIDtoGUID(pid, fd);
+	if(fd_guid < 0){
+		res = fd_guid;
+		goto end;
+	}
+
+	SceOff seek_res = ksceIoLseek(fd_guid, 0, SCE_SEEK_CUR);
+	if(seek_res < 0LL){
+		res = (int)seek_res;
+		seek_res = 0LL;
+	}else{
+		res = 0;
+	}
+
+	ksceKernelMemcpyToUser(pos, &seek_res, sizeof(*pos));
+
+end:
+	ksceKernelSetPermission(curr_al);
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
 }
 
 int kuIoMkdir(const char* dir){
+
 	uint32_t state;
+	int res;
+	char path_resolved[0x400];
+
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, dir, 256);
-	
-	// Checking if the request is trying to access ux0:/data for security reasons
-	#ifdef SAFE_MODE
-	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-	#endif
-	
-		// Performing request to kernel thread
-		io_request.type = CREATE_DIR;
-		io_request.file = fname;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Waiting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
-	#ifdef SAFE_MODE	
+
+	res = kuioCpyPath(ksceKernelGetProcessId(), path_resolved, sizeof(path_resolved), dir);
+	if(res >= 0){
+		int curr_al = ksceKernelSetPermission(0x40);
+		res = ksceIoMkdir(path_resolved, 6);
+		ksceKernelSetPermission(curr_al);
 	}
-	#endif
-	
+
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
 }
 
-int kuIoRemove(const char* file){
+int kuIoRemove(const char *file){
+
 	uint32_t state;
+	int res;
+	char path_resolved[0x400];
+
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, file, 256);
-	
-	// Checking if the request is trying to access ux0:/data for security reasons
-	#ifdef SAFE_MODE
-	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-	#endif
-	
-		// Performing request to kernel thread
-		io_request.type = REMOVE_FILE;
-		io_request.file = fname;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Waiting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
-	#ifdef SAFE_MODE
+
+	res = kuioCpyPath(ksceKernelGetProcessId(), path_resolved, sizeof(path_resolved), file);
+	if(res >= 0){
+		int curr_al = ksceKernelSetPermission(0x40);
+		res = ksceIoRemove(path_resolved);
+		ksceKernelSetPermission(curr_al);
 	}
-	#endif
-		
+
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
 }
 
-int kuIoRmdir(const char* dir){
+int kuIoRmdir(const char *dir){
+
 	uint32_t state;
+	int res;
+	char path_resolved[0x400];
+
 	ENTER_SYSCALL(state);
-	ksceKernelStrncpyUserToKernel(fname, dir, 256);
-	
-	// Checking if the request is trying to access ux0:/data for security reasons
-	#ifdef SAFE_MODE
-	if ((strstr(fname, "ux0:data") != NULL) || (strstr(fname, "ux0:/data") != NULL)){
-	#endif
-	
-		// Performing request to kernel thread
-		io_request.type = REMOVE_DIR;
-		io_request.file = fname;
-		ksceKernelSignalSema(io_request_mutex, 1);
-		
-		// Waiting results
-		ksceKernelWaitSema(io_result_mutex, 1, NULL);
-	
-	#ifdef SAFE_MODE
+
+	res = kuioCpyPath(ksceKernelGetProcessId(), path_resolved, sizeof(path_resolved), dir);
+	if(res >= 0){
+		int curr_al = ksceKernelSetPermission(0x40);
+		res = ksceIoRmdir(path_resolved);
+		ksceKernelSetPermission(curr_al);
 	}
-	#endif
-		
+
 	EXIT_SYSCALL(state);
-	return 0;
+	return res;
 }
 
 void _start() __attribute__ ((weak, alias ("module_start")));
-int module_start(SceSize argc, const void *args) {	
-	
-	// Starting I/O mutexes
-	io_request_mutex = ksceKernelCreateSema("kuio_request", 0, 0, 1, NULL);
-	io_result_mutex = ksceKernelCreateSema("kuio_result", 0, 0, 1, NULL);
-	
-	// Starting a secondary thread to hold kernel privileges
-	kuio_thd_id = ksceKernelCreateThread("kuio_thread", kuio_thread, 0x3C, 0x1000, 0, 0x10000, 0);
-	ksceKernelStartThread(kuio_thd_id, 0, NULL);
-	
+int module_start(SceSize argc, const void *args) {
 	return SCE_KERNEL_START_SUCCESS;
-}
-
-int module_stop(SceSize argc, const void *args) {
-	return SCE_KERNEL_STOP_SUCCESS;	
 }
