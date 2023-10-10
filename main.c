@@ -6,7 +6,7 @@
 #include <psp2kern/kernel/cpu.h>
 #include <psp2kern/io/fcntl.h>
 #include <psp2kern/fios2.h>
-#include <psp2kern/sblacmgr.h>
+#include <psp2kern/kernel/acmgr.h>
 #include "include/kuio.h"
 
 #define SAFE_MODE 1
